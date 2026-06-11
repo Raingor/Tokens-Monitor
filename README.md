@@ -164,6 +164,14 @@ Tokens-Monitor/
 │       ├── useWebSocket.ts   # WebSocket Hook
 │       ├── types.ts          # TypeScript 类型
 │       └── index.css         # 全局样式
+├── sdk/                      # SDK 包装器（自动上报）
+│   ├── index.js              # SDK 入口
+│   ├── reporter.js           # 核心上报模块
+│   ├── openai.js             # OpenAI SDK 包装
+│   ├── anthropic.js          # Anthropic SDK 包装
+│   ├── google.js             # Google Gemini SDK 包装
+│   ├── fetch.js              # 通用 fetch/axios 包装
+│   └── examples.js           # 使用示例
 ├── config.json               # 配置文件
 └── package.json
 ```
@@ -184,6 +192,99 @@ Tokens-Monitor/
 - Provider 分布饼图
 - 模型使用排行柱状图
 - 请求记录列表（支持分页、Provider 筛选）
+
+## SDK 集成指南
+
+SDK 位于 `sdk/` 目录，提供 4 种集成方式，让你的 LLM 调用自动上报 token 用量。
+
+### 方式 1：OpenAI SDK 包装（最简集成）
+
+```js
+const OpenAI = require('openai');
+const { wrapOpenAI } = require('./sdk');
+
+// 只需包装一行，之后所有调用自动上报
+const client = wrapOpenAI(new OpenAI({ apiKey: 'sk-xxx' }));
+
+const response = await client.chat.completions.create({
+  model: 'gpt-4o',
+  messages: [{ role: 'user', content: 'Hello' }],
+});
+// token 用量已自动上报到监控面板！
+```
+
+### 方式 2：Anthropic SDK 包装
+
+```js
+const Anthropic = require('@anthropic-ai/sdk');
+const { wrapAnthropic } = require('./sdk');
+
+const client = wrapAnthropic(new Anthropic({ apiKey: 'sk-ant-xxx' }));
+
+const message = await client.messages.create({
+  model: 'claude-sonnet-4-20250514',
+  max_tokens: 1024,
+  messages: [{ role: 'user', content: 'Hello' }],
+});
+```
+
+### 方式 3：Google Gemini SDK 包装
+
+```js
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { wrapGoogle } = require('./sdk');
+
+const genAI = wrapGoogle(new GoogleGenerativeAI('AIza-xxx'));
+const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+
+const result = await model.generateContent('Hello');
+```
+
+### 方式 4：通用 fetch / axios 包装
+
+适用于不使用官方 SDK、直接 HTTP 调用的项目：
+
+```js
+const { wrapFetch } = require('./sdk');
+const trackedFetch = wrapFetch(fetch);
+
+const resp = await trackedFetch('https://api.openai.com/v1/chat/completions', {
+  method: 'POST',
+  headers: { 'Authorization': 'Bearer sk-xxx', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ model: 'gpt-4o', messages: [...] }),
+});
+// 自动从响应中解析 usage 并上报
+```
+
+也支持 axios：
+
+```js
+const axios = require('axios');
+const { wrapAxios } = require('./sdk');
+const client = wrapAxios(axios.create());
+```
+
+### 自定义 Reporter
+
+```js
+const { TokenReporter, wrapOpenAI } = require('./sdk');
+
+const reporter = new TokenReporter({
+  endpoint: 'http://your-server:3847/api/report',
+  appName: 'my-app',
+  silent: true,   // 上报失败不影响主业务
+  async: true,    // 异步上报不阻塞
+});
+
+const client = wrapOpenAI(new OpenAI(), { reporter });
+```
+
+### 环境变量
+
+- `TOKENS_MONITOR_URL` — 上报地址（默认 `http://localhost:3847/api/report`）
+- `APP_NAME` — 应用名称标识
+
+运行完整示例：`node sdk/examples.js`
 
 ## License
 
