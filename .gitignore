@@ -1,0 +1,8 @@
+node_modules/
+data/
+*.db
+config.json
+.DS_Store
+dist/
+client/dist/
+dashboard-screenshot.png
