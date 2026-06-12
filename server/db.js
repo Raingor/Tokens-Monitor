@@ -46,10 +46,28 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_daily_stats_date ON daily_stats(date);
 `);
 
+// Migration: add new columns if they don't exist
+const existingCols = db.prepare("PRAGMA table_info(requests)").all().map(c => c.name);
+const migrations = [
+  { col: 'cache_creation_tokens', def: 'INTEGER NOT NULL DEFAULT 0' },
+  { col: 'cache_read_tokens', def: 'INTEGER NOT NULL DEFAULT 0' },
+  { col: 'tool', def: "TEXT DEFAULT ''" },
+  { col: 'session_id', def: "TEXT DEFAULT ''" },
+];
+for (const m of migrations) {
+  if (!existingCols.includes(m.col)) {
+    db.exec(`ALTER TABLE requests ADD COLUMN ${m.col} ${m.def}`);
+    console.log(`[DB] Migrated: added column ${m.col}`);
+  }
+}
+
+// Add index on tool column
+db.exec(`CREATE INDEX IF NOT EXISTS idx_requests_tool ON requests(tool)`);
+
 // Prepared statements
 const insertRequestStmt = db.prepare(`
-  INSERT OR IGNORE INTO requests (timestamp, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, endpoint, raw_data, request_id)
-  VALUES (@timestamp, @provider, @model, @prompt_tokens, @completion_tokens, @total_tokens, @estimated_cost, @endpoint, @raw_data, @request_id)
+  INSERT OR IGNORE INTO requests (timestamp, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, endpoint, raw_data, request_id, cache_creation_tokens, cache_read_tokens, tool, session_id)
+  VALUES (@timestamp, @provider, @model, @prompt_tokens, @completion_tokens, @total_tokens, @estimated_cost, @endpoint, @raw_data, @request_id, @cache_creation_tokens, @cache_read_tokens, @tool, @session_id)
 `);
 
 const upsertDailyStatsStmt = db.prepare(`
@@ -63,14 +81,19 @@ const upsertDailyStatsStmt = db.prepare(`
 `);
 
 function insertRequest(data) {
-  const { provider, model, prompt_tokens = 0, completion_tokens = 0, endpoint, raw_data, request_id } = data;
+  const {
+    provider, model, prompt_tokens = 0, completion_tokens = 0,
+    endpoint, raw_data, request_id,
+    cache_creation_tokens = 0, cache_read_tokens = 0,
+    tool = '', session_id = '',
+  } = data;
   const total_tokens = prompt_tokens + completion_tokens;
   const timestamp = data.timestamp || new Date().toISOString();
   const date = timestamp.split('T')[0];
 
   // Calculate estimated cost based on config
   const config = require('./config');
-  const estimated_cost = config.calculateCost(provider, model, prompt_tokens, completion_tokens);
+  const estimated_cost = data.cost || config.calculateCost(provider, model, prompt_tokens, completion_tokens);
 
   const result = insertRequestStmt.run({
     timestamp,
@@ -83,6 +106,10 @@ function insertRequest(data) {
     endpoint: endpoint || null,
     raw_data: raw_data ? JSON.stringify(raw_data) : null,
     request_id: request_id || null,
+    cache_creation_tokens,
+    cache_read_tokens,
+    tool,
+    session_id,
   });
 
   if (result.changes > 0) {
@@ -120,9 +147,13 @@ function getRecentRequests(limit = 50, offset = 0, filters = {}) {
     where += ' AND timestamp <= @endDate';
     params.endDate = filters.endDate;
   }
+  if (filters.tool) {
+    where += ' AND tool = @tool';
+    params.tool = filters.tool;
+  }
 
   const stmt = db.prepare(`
-    SELECT id, timestamp, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, endpoint
+    SELECT id, timestamp, provider, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost, endpoint, cache_creation_tokens, cache_read_tokens, tool, session_id
     FROM requests
     WHERE ${where}
     ORDER BY timestamp DESC
@@ -164,6 +195,13 @@ function getProviders() {
     SELECT DISTINCT provider FROM requests ORDER BY provider
   `);
   return stmt.all().map(r => r.provider);
+}
+
+function getTools() {
+  const stmt = db.prepare(`
+    SELECT DISTINCT tool FROM requests WHERE tool != '' ORDER BY tool
+  `);
+  return stmt.all().map(r => r.tool);
 }
 
 function getModels(provider = null) {
@@ -245,6 +283,7 @@ module.exports = {
   getDailyStats,
   getProviders,
   getModels,
+  getTools,
   getTodayStats,
   getProviderDistribution,
   getModelDistribution,

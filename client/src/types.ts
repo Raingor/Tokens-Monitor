@@ -8,6 +8,10 @@ export interface RequestRecord {
   total_tokens: number;
   estimated_cost: number;
   endpoint: string | null;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  tool: string;
+  session_id: string;
 }
 
 export interface TodayStats {

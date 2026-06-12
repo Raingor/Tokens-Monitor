@@ -5,6 +5,7 @@ const http = require('http');
 const config = require('./config');
 const db = require('./db');
 const CollectorManager = require('./collector-manager');
+const LogWatcher = require('./log-watcher');
 
 // Load config
 config.loadConfig();
@@ -187,6 +188,16 @@ app.post('/api/collector/collect', async (req, res) => {
   }
 });
 
+// GET /api/tools - List of detected tools
+app.get('/api/tools', (req, res) => {
+  try {
+    const tools = db.getTools();
+    res.json({ tools });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), clients: clients.size });
@@ -204,12 +215,18 @@ server.listen(PORT, HOST, () => {
 
   // Start collector manager
   collectorManager.start();
+
+  // Start log watcher (monitors Claude Code, OpenCode, Roo Code, etc.)
+  const logWatcher = new LogWatcher();
+  logWatcher.setBroadcast(broadcast);
+  logWatcher.start();
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
   collectorManager.stop();
+  if (typeof logWatcher !== 'undefined') logWatcher.stop();
   wss.close();
   server.close();
   db.db.close();
@@ -218,6 +235,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
   collectorManager.stop();
+  if (typeof logWatcher !== 'undefined') logWatcher.stop();
   wss.close();
   server.close();
   db.db.close();

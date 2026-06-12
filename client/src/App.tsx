@@ -19,9 +19,28 @@ const PROVIDER_COLORS: Record<string, string> = {
   openai: '#10b981',
   anthropic: '#8b5cf6',
   google: '#3b82f6',
+  deepseek: '#f59e0b',
   meta: '#f59e0b',
   mistral: '#ef4444',
+  openrouter: '#ec4899',
+  qwen: '#06b6d4',
   default: '#06b6d4',
+};
+
+const TOOL_LABELS: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  'opencode': 'OpenCode',
+  'roocode': 'Roo Code',
+  'kilocode': 'Kilo Code',
+  'cline': 'Cline',
+};
+
+const TOOL_COLORS: Record<string, string> = {
+  'claude-code': '#d97706',
+  'opencode': '#059669',
+  'roocode': '#7c3aed',
+  'kilocode': '#dc2626',
+  'cline': '#2563eb',
 };
 
 function getProviderColor(provider: string): string {
@@ -379,19 +398,35 @@ export default function App() {
                   <thead>
                     <tr>
                       <th>时间</th>
+                      <th>工具</th>
                       <th>Provider</th>
                       <th>模型</th>
-                      <th>输入 Token</th>
-                      <th>输出 Token</th>
+                      <th>输入</th>
+                      <th>输出</th>
+                      <th>缓存读</th>
+                      <th>缓存写</th>
                       <th>总计</th>
                       <th>费用</th>
-                      <th>Endpoint</th>
                     </tr>
                   </thead>
                   <tbody>
                     {requests.map(req => (
                       <tr key={req.id}>
                         <td style={{ color: 'var(--text-muted)' }}>{formatDateTime(req.timestamp)}</td>
+                        <td>
+                          {req.tool ? (
+                            <span style={{
+                              fontSize: 11,
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              background: `${TOOL_COLORS[req.tool] || '#64748b'}22`,
+                              color: TOOL_COLORS[req.tool] || '#94a3b8',
+                              fontWeight: 500,
+                            }}>
+                              {TOOL_LABELS[req.tool] || req.tool}
+                            </span>
+                          ) : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>-</span>}
+                        </td>
                         <td>
                           <span className={`provider-badge ${req.provider.toLowerCase()}`}>
                             <span className="dot" style={{ background: getProviderColor(req.provider), width: 6, height: 6, borderRadius: '50%' }} />
@@ -401,9 +436,14 @@ export default function App() {
                         <td><span className="model-name">{req.model}</span></td>
                         <td className="token-value">{formatNumber(req.prompt_tokens)}</td>
                         <td className="token-value">{formatNumber(req.completion_tokens)}</td>
+                        <td className="token-value" style={{ color: '#06b6d4' }}>
+                          {req.cache_read_tokens ? formatNumber(req.cache_read_tokens) : '-'}
+                        </td>
+                        <td className="token-value" style={{ color: '#f59e0b' }}>
+                          {req.cache_creation_tokens ? formatNumber(req.cache_creation_tokens) : '-'}
+                        </td>
                         <td className="token-value" style={{ fontWeight: 600 }}>{formatNumber(req.total_tokens)}</td>
                         <td className="cost-value">{formatCost(req.estimated_cost)}</td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 11 }}>{req.endpoint || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
